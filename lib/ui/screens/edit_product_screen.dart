@@ -1,8 +1,15 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../data/database/db_helper.dart';
 import '../../data/models/product.dart';
+import '../utils/custom_snackbar.dart';
+import '../widgets/custom_button.dart';
+import '../utils/custom_text_field.dart';
+import '../utils/image_piker_card.dart';
+import '../widgets/image_source_bottomsheet.dart';
 
 class EditProductScreen extends StatefulWidget {
   final Product product;
@@ -27,6 +34,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   @override
   void initState() {
     super.initState();
+
     _idController = TextEditingController(text: widget.product.id);
     _nameController = TextEditingController(text: widget.product.name);
     _descController = TextEditingController(text: widget.product.description);
@@ -39,27 +47,56 @@ class _EditProductScreenState extends State<EditProductScreen> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    final picked = await _picker.pickImage(source: source, imageQuality: 70);
-    if (picked != null) {
-      setState(() => _imageFile = File(picked.path));
+    try {
+      final picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 70,
+        maxWidth: 1200,
+      );
+      if (picked != null && mounted) {
+        setState(() => _imageFile = File(picked.path));
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackBar(context, 'Failed to pick image');
+      }
     }
   }
 
   Future<void> _updateProduct() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final newImagePath = _imageFile?.path ?? '';
+
     final updated = Product(
-      id: widget.product.id, // 🔒 immutable
-      name: _nameController.text,
-      description: _descController.text,
-      stock: int.parse(_stockController.text),
-      imagePath: _imageFile?.path ?? '',
+      id: widget.product.id, // immutable
+      name: _nameController.text.trim(),
+      description: _descController.text.trim(),
+      stock: int.parse(_stockController.text.trim()),
+      imagePath: newImagePath,
       addedBy: widget.product.addedBy,
       createdAt: widget.product.createdAt,
     );
 
-    await DBHelper.updateProduct(updated);
-    Navigator.pop(context, true);
+    try {
+      await DBHelper.updateProduct(updated);
+
+      if (mounted) {
+        showSuccessSnackBar(
+          context,
+          'Product updated successfully',
+          title: 'Updated',
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackBar(
+          context,
+          'Failed to update product: ${e.toString()}',
+        );
+      }
+    }
   }
 
   @override
@@ -81,94 +118,84 @@ class _EditProductScreenState extends State<EditProductScreen> {
           key: _formKey,
           child: Column(
             children: [
-              GestureDetector(
+              ImagePickerCard(
+                imageFile: _imageFile,
                 onTap: () {
                   showModalBottomSheet(
                     context: context,
-                    builder: (_) => SafeArea(
-                      child: Wrap(
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.camera_alt),
-                            title: const Text('Camera'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _pickImage(ImageSource.camera);
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.photo),
-                            title: const Text('Gallery'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _pickImage(ImageSource.gallery);
-                            },
-                          ),
-                        ],
-                      ),
+                    backgroundColor: Colors.transparent,
+                    isScrollControlled: true,
+                    builder: (_) => ImageSourceBottomSheet(
+                      onCameraTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.camera);
+                      },
+                      onGalleryTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.gallery);
+                      },
                     ),
                   );
                 },
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage:
-                  _imageFile != null ? FileImage(_imageFile!) : null,
-                  child: _imageFile == null
-                      ? const Icon(Icons.camera_alt, size: 30)
-                      : null,
-                ),
               ),
+
               const SizedBox(height: 20),
 
-              // 🔒 Product ID (disabled)
-              TextFormField(
+              // Disabled ID field
+              CustomTextField(
                 controller: _idController,
+                label: 'Product ID',
+                hint: 'Cannot be changed',
                 enabled: false,
-                decoration: const InputDecoration(
-                  labelText: 'Product ID',
-                ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              TextFormField(
+              CustomTextField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Product Name'),
+                label: 'Product Name',
+                hint: 'Product name',
                 validator: (value) =>
-                value == null || value.isEmpty ? 'Required field' : null,
+                value == null || value.trim().isEmpty
+                    ? 'Required field'
+                    : null,
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              TextFormField(
+              CustomTextField(
                 controller: _descController,
-                decoration: const InputDecoration(labelText: 'Description'),
+                label: 'Description',
+                hint: 'Description (optional)',
                 maxLines: 3,
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              TextFormField(
+              CustomTextField(
                 controller: _stockController,
-                decoration: const InputDecoration(labelText: 'Stock'),
+                label: 'Stock',
+                hint: 'Quantity',
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  final stock = int.tryParse(value ?? '');
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Required field';
+                  }
+                  final stock = int.tryParse(value.trim());
                   if (stock == null || stock < 0) {
-                    return 'Stock must be 0 or greater';
+                    return 'Must be 0 or greater';
                   }
                   return null;
                 },
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _updateProduct,
-                  child: const Text('Update Product'),
-                ),
+              CustomButton(
+                text: 'Update Product',
+                icon: Icons.save_alt_outlined,
+                width: 220,
+                onPressed: _updateProduct,
               ),
             ],
           ),

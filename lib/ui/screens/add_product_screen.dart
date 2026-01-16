@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../data/database/db_helper.dart';
 import '../../data/models/product.dart';
+import '../widgets/custom_button.dart';
+import '../utils/custom_text_field.dart';
+import '../utils/image_piker_card.dart';
+import '../widgets/image_source_bottomsheet.dart';
+import 'package:awesome_snackbar_content/awesome_snackbar_content.dart';
 
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({super.key});
@@ -10,7 +15,6 @@ class AddProductScreen extends StatefulWidget {
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
 }
-
 
 class _AddProductScreenState extends State<AddProductScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -21,7 +25,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _stockController = TextEditingController();
 
   File? _imageFile;
-
   final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage(ImageSource source) async {
@@ -32,8 +35,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   bool _isValidProductId(String value) {
-    final regex = RegExp(r'^[a-zA-Z0-9]{5}$');
-    return regex.hasMatch(value);
+    return RegExp(r'^[a-zA-Z0-9]{5}$').hasMatch(value);
   }
 
   Future<void> _saveProduct() async {
@@ -42,9 +44,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final id = _idController.text.toUpperCase();
 
     if (await DBHelper.productExists(id)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product ID already exists')),
+      if (!context.mounted) return;
+
+      // Clear any previous snackbars (optional but clean)
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      final snackBar = SnackBar(
+        /// IMPORTANT: Set these properties for the best effect
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        duration: const Duration(seconds: 4),
+        content: AwesomeSnackbarContent(
+          title: 'Oops!',
+          message: 'Product ID already exists!',
+          contentType: ContentType.failure,  // Gives red header + error icon
+        ),
       );
+
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
       return;
     }
 
@@ -60,16 +78,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     await DBHelper.insertProduct(product);
 
-    Navigator.pop(context, true);
-  }
+    if (!context.mounted) return;
 
-  @override
-  void dispose() {
-    _idController.dispose();
-    _nameController.dispose();
-    _descController.dispose();
-    _stockController.dispose();
-    super.dispose();
+    // Optional: Show success message before popping
+    final successSnackBar = SnackBar(
+      elevation: 0,
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.transparent,
+      duration: const Duration(seconds: 3),
+      content: AwesomeSnackbarContent(
+        title: 'Success!',
+        message: 'Product added successfully!',
+        contentType: ContentType.success,  // Green header + check icon
+      ),
+    );
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(successSnackBar);
+
+    Navigator.pop(context, true);
   }
 
   @override
@@ -82,105 +110,86 @@ class _AddProductScreenState extends State<AddProductScreen> {
           key: _formKey,
           child: Column(
             children: [
-              GestureDetector(
+              ImagePickerCard(
+                imageFile: _imageFile,
                 onTap: () {
                   showModalBottomSheet(
                     context: context,
-                    builder: (_) => SafeArea(
-                      child: Wrap(
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.camera_alt),
-                            title: const Text('Camera'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _pickImage(ImageSource.camera);
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.photo),
-                            title: const Text('Gallery'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _pickImage(ImageSource.gallery);
-                            },
-                          ),
-                        ],
-                      ),
+                    backgroundColor: Colors.transparent,
+                    isScrollControlled: true,
+                    builder: (_) => ImageSourceBottomSheet(
+                      onCameraTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.camera);
+                      },
+                      onGalleryTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.gallery);
+                      },
                     ),
                   );
                 },
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage:
-                  _imageFile != null ? FileImage(_imageFile!) : null,
-                  child: _imageFile == null
-                      ? const Icon(Icons.camera_alt, size: 30)
-                      : null,
-                ),
               ),
+
               const SizedBox(height: 20),
 
-              TextFormField(
+              CustomTextField(
                 controller: _idController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Product ID (5 chars)',
-                ),
+                label: 'Product ID',
+                hint: '5 characters',
                 onChanged: (value) {
                   _idController.value = _idController.value.copyWith(
                     text: value.toUpperCase(),
-                    selection: TextSelection.collapsed(offset: value.length),
+                    selection:
+                    TextSelection.collapsed(offset: value.length),
                   );
                 },
-                validator: (value) {
-                  if (value == null || !_isValidProductId(value)) {
-                    return 'Enter exactly 5 alphanumeric characters';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Product Name'),
                 validator: (value) =>
-                value!.isEmpty ? 'Required field' : null,
+                value == null || !_isValidProductId(value)
+                    ? 'Enter exactly 5 alphanumeric characters'
+                    : null,
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              TextFormField(
+              CustomTextField(
+                controller: _nameController,
+                label: 'Product Name',
+                hint: 'Product name',
+                validator: (value) =>
+                value == null || value.isEmpty ? 'Required field' : null,
+              ),
+
+              const SizedBox(height: 14),
+
+              CustomTextField(
                 controller: _descController,
-                decoration: const InputDecoration(labelText: 'Description'),
+                label: 'Description',
+                hint: 'Description',
                 maxLines: 3,
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              TextFormField(
+              CustomTextField(
                 controller: _stockController,
-                decoration: const InputDecoration(labelText: 'Initial Stock'),
+                label: 'Stock',
+                hint: 'Quantity',
                 keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || int.tryParse(value) == null) {
-                    return 'Enter valid number';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                value == null || int.tryParse(value) == null
+                    ? 'Enter valid number'
+                    : null,
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _saveProduct,
-                  child: const Text('Save Product'),
-                ),
-              )
+              CustomButton(
+                text: 'Add Product',
+                icon: Icons.add,
+                width: 200,
+                onPressed: _saveProduct,
+              ),
             ],
           ),
         ),
